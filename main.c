@@ -1,8 +1,11 @@
 #include <stdio.h>
+#include <stdlib.h>
 #include <ctype.h>
 #include "nodes.h"
 #include "C.tab.h"
 #include <string.h>
+#include "types.h"
+#include "list.h"
 
 char *named(int t)
 {
@@ -92,33 +95,71 @@ void print_tree(NODE *tree)
     print_tree0(tree, 0);
 }
 
-int recursive_interpret(NODE *tree, int level) {
-  if (tree==NULL) return 0;
+void add_function_to_env(NODE *tree, ENV *env_ptr) {
+  NODE* func_name = tree->left->right->left->left;
+  TOKEN* name_token = (TOKEN*) func_name;
+  printf("Added function name %s to environment\n", name_token->lexeme);
+  if (env_ptr->bindings == NULL) {
+    env_ptr->bindings = create_list(create_binding(name_token->lexeme, tree), NULL);
+  } else {
+    append_list(env_ptr->bindings, create_binding(name_token->lexeme, tree));
+  }
+}
+
+void add_var_to_env(NODE *tree, ENV *env_ptr) {
+  NODE* var_name = tree->left->left;
+  TOKEN* name_token = (TOKEN*) var_name;
+  printf("Added variable name %s to environment\n", name_token->lexeme);
+  if (env_ptr->bindings == NULL) {
+    env_ptr->bindings = create_list(create_binding(name_token->lexeme, tree->right), NULL);
+  } else {
+    append_list(env_ptr->bindings, create_binding(name_token->lexeme, tree->right));
+  }
+}
+
+void recursive_interpret(NODE *tree, ENV *env_ptr) {
+  if (tree==NULL) return;
   if (tree->type==LEAF) {
-    return ((TOKEN *) tree->left)->value;
+    return;
   }
   if (tree->type=='D') {
-    // this is a function definition D
-    recursive_interpret(tree->left, 0);
-    return recursive_interpret(tree->right, 0);
+    // this is a function definition
+    printf("Adding function to environment\n");
+    add_function_to_env(tree, env_ptr);
+    return;
   }
-  if (tree->type==RETURN) {
-    return recursive_interpret(tree->left, 0);
+  if (tree->type=='=') {
+    // this is a variable definition
+    printf("Adding variable to environment\n");
+    add_var_to_env(tree, env_ptr);
+    return;
   }
-  if (tree->type=='+') {
-    return recursive_interpret(tree->left, 0) + recursive_interpret(tree->right, 0);
+  recursive_interpret(tree->left, env_ptr);
+  recursive_interpret(tree->right, env_ptr);
+}
+
+ENV* cons_global_env(NODE *tree) {
+  ENV* global = (ENV*) malloc(sizeof(ENV));
+  if (global == NULL) {
+    perror("Failed to create env pointer: ");
+    exit(1);
   }
-  if (tree->type=='*') {
-    return recursive_interpret(tree->left, 0) * recursive_interpret(tree->right, 0);
-  }
-  if (tree->type=='-') {
-    return recursive_interpret(tree->left, 0) - recursive_interpret(tree->right, 0);
-  }
-  return 0;
+  global->parent = NULL;
+  global->bindings = NULL;
+
+  recursive_interpret(tree, global);
+  return global;
 }
 
 void interpret_tree(NODE *tree) {
-  printf("%d\n", recursive_interpret(tree, 0));
+  ENV* global_env = cons_global_env(tree);
+  BIND* ref_main = find_name_in_list("main", global_env->bindings);
+  if (ref_main == NULL) {
+    printf("Could not find main, cannot run!\n");
+    exit(1);
+  } else {
+    printf("Located %s, ready to run!\n", ref_main->name);
+  }
 }
 
 extern int yydebug;
