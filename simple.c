@@ -1,11 +1,9 @@
-int blah = 1;
-
-int foo = 2;
-
-int my_func(int c) {
+int my_func() {
   return 3;
 }
 
+int foo = my_func();
+
 int main() {
-  return my_func();
+  return my_func() + foo;
 }

@@ -90,6 +90,9 @@ void print_tree0(NODE *tree, int level)
     }
 }
 
+// forward declare because it is used in add_var_to_env
+int recursive_interpret(NODE*, ENV*);
+
 void print_tree(NODE *tree)
 {
     print_tree0(tree, 0);
@@ -98,7 +101,8 @@ void print_tree(NODE *tree)
 void add_function_to_env(NODE *tree, ENV *env_ptr) {
   NODE* func_name = tree->left->right->left->left;
   TOKEN* name_token = (TOKEN*) func_name;
-  printf("Added function name %s to environment\n", name_token->lexeme);
+  printf("Added function name %s to environment with value: \n", name_token->lexeme);
+  print_tree(tree);
   if (env_ptr->bindings == NULL) {
     env_ptr->bindings = create_list(create_binding(name_token->lexeme, tree), NULL);
   } else {
@@ -106,60 +110,90 @@ void add_function_to_env(NODE *tree, ENV *env_ptr) {
   }
 }
 
+
 void add_var_to_env(NODE *tree, ENV *env_ptr) {
   NODE* var_name = tree->left->left;
   TOKEN* name_token = (TOKEN*) var_name;
-  printf("Added variable name %s to environment\n", name_token->lexeme);
+  TOKEN* tok = new_token(INT);
+  tok->value = recursive_interpret(tree->right, env_ptr);
+  asprintf(&tok->lexeme, "%d", tok->value);
+  printf("Added variable name %s to environment with value: %s\n", name_token->lexeme, tok->lexeme);
   if (env_ptr->bindings == NULL) {
-    env_ptr->bindings = create_list(create_binding(name_token->lexeme, tree->right), NULL);
+    env_ptr->bindings = create_list(create_binding(name_token->lexeme, (NODE*) tok), NULL);
   } else {
-    append_list(env_ptr->bindings, create_binding(name_token->lexeme, tree->right));
+    append_list(env_ptr->bindings, create_binding(name_token->lexeme, (NODE*) tok));
   }
 }
 
-void recursive_interpret(NODE *tree, ENV *env_ptr) {
-  if (tree==NULL) return;
+int recursive_interpret(NODE *tree, ENV *env_ptr) {
+  if (tree==NULL) return 0;
   if (tree->type==LEAF) {
-    return;
+    if (tree->left->type == CONSTANT) {
+      return ((TOKEN *) tree->left)->value;
+    } else if (tree->left->type == STRING_LITERAL) {
+      printf("Not implemented\n");
+      exit(1);
+    } else if (tree->left->type == INT) {
+      // do nothing we dont care about types
+      return 0;
+    } else {
+      TOKEN* tok = (TOKEN *) tree->left;
+      BIND* var_bind = find_name_in_env(tok->lexeme, env_ptr);
+      if (var_bind == NULL) {
+        printf("Could not find variable %s\n", tok->lexeme);
+        exit(1);
+      }
+      TOKEN* var_tok = (TOKEN *) var_bind->tree;
+      return var_tok->value;
+    }
   }
   if (tree->type=='D') {
     // this is a function definition
-    printf("Adding function to environment\n");
     add_function_to_env(tree, env_ptr);
-    return;
+    return 0;
   }
   if (tree->type=='=') {
     // this is a variable definition
-    printf("Adding variable to environment\n");
     add_var_to_env(tree, env_ptr);
-    return;
+    return 0;
+  }
+  if (tree->type==APPLY) {
+    ENV* new_env = create_new_function_env(env_ptr);
+    char* func_name = ((TOKEN*) tree->left->left)->lexeme;
+    BIND* func = find_name_in_env(func_name, env_ptr);
+    if (func == NULL) {
+      printf("Could not find binding for function with name %s\n", func_name);
+      exit(1);
+    }
+    return recursive_interpret(func->tree->right, new_env);
+  }
+  if (tree->type == '+') {
+    return recursive_interpret(tree->left, env_ptr) + recursive_interpret(tree->right, env_ptr);
+  }
+  if (tree->type == RETURN) {
+    return recursive_interpret(tree->left, env_ptr);
   }
   recursive_interpret(tree->left, env_ptr);
   recursive_interpret(tree->right, env_ptr);
+  return 0;
 }
 
 ENV* cons_global_env(NODE *tree) {
-  ENV* global = (ENV*) malloc(sizeof(ENV));
-  if (global == NULL) {
-    perror("Failed to create env pointer: ");
-    exit(1);
-  }
-  global->parent = NULL;
-  global->bindings = NULL;
-
+  ENV* global = create_new_function_env(NULL);
   recursive_interpret(tree, global);
   return global;
 }
 
 void interpret_tree(NODE *tree) {
   ENV* global_env = cons_global_env(tree);
-  BIND* ref_main = find_name_in_list("main", global_env->bindings);
+  BIND* ref_main = find_name_in_env("main", global_env);
   if (ref_main == NULL) {
     printf("Could not find main, cannot run!\n");
     exit(1);
-  } else {
-    printf("Located %s, ready to run!\n", ref_main->name);
   }
+  // print ref_main to make sure we really got it
+  printf("Located %s, ready to run!\n", ref_main->name);
+  printf("%d\n", recursive_interpret(ref_main->tree->right, global_env));
 }
 
 extern int yydebug;

@@ -14,6 +14,17 @@ BLIST* create_list(BIND *binding, BLIST *second) {
   return head;
 }
 
+ENV* create_new_function_env(ENV* env) {
+  ENV* n_env = (ENV*) malloc(sizeof(ENV));
+  if (n_env == NULL) {
+    perror("Failed to create environment");
+    exit(1);
+  }
+  n_env->bindings = NULL;
+  n_env->parent = env;
+  return n_env;
+}
+
 BIND* create_binding(char* name, NODE* tree) {
   BIND* n_bind = (BIND*) malloc(sizeof(BIND));
   if (n_bind == NULL) {
@@ -44,3 +55,13 @@ BIND* find_name_in_list(char* name, BLIST *head) {
   }
   return NULL;
 }
+
+BIND* find_name_in_env(char* name, ENV* env) {
+  BIND* ptr = NULL;
+  ENV* env_ptr = env;
+  while (env_ptr != NULL && (ptr = find_name_in_list(name, env_ptr->bindings)) == NULL) {
+    env_ptr = env_ptr->parent;
+  }
+  return ptr;
+}
+
